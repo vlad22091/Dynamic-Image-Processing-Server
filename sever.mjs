@@ -1,87 +1,80 @@
 // server.mjs
-import { createServer } from 'node:http';
+import express from 'express';
 import { existsSync } from 'node:fs';
 import sharp from 'sharp';
 
-// Назва нашої базової картинки, з якої будемо робити всі розміри
-const BASE_IMAGE = './source.jpg'
-;
+const app = express();
+const BASE_IMAGE = './source.jpg';
 
-const server = createServer(async (req, res) => {
+// Логування всіх запитів
+app.use((req, res, next) => {
   console.log('Отримано запит:', req.url);
+  next(); // Передаємо керування наступним маршрутам
+});
 
-  // Динамічна генерація Фавікону (32x32)
-  if (req.url === '/favicon.ico') {
-    if (existsSync(BASE_IMAGE)) {
-      try {
-        const faviconBuffer = await sharp(BASE_IMAGE)
-          .resize(32, 32)
-          .png()
-          .toBuffer();
-
-        res.writeHead(200, { 'Content-Type': 'image/png' });
-        res.end(faviconBuffer);
-      } catch (err) {
-        res.writeHead(500);
-        res.end('Помилка генерації фавікону');
-      }
-    } else {
-      res.writeHead(404);
-      res.end();
-    }
-    return;
+// Динамічна генерація Фавікону (32x32)
+app.get('/favicon.ico', async (req, res) => {
+  if (!existsSync(BASE_IMAGE)) {
+    return res.status(404).end(); // Express сам розуміє, що треба завершити відповідь
   }
 
-  // Динамічна зміна розміру по запиту /image/ШИРИНА/ВИСОТА
-  if (req.url.startsWith('/image/')) {
-    const parts = req.url.split('/');
-    
-    if (parts.length === 4) {
-      // Витягуємо числа з масиву
-      const width = parseInt(parts[2]);
-      const height = parseInt(parts[3]);
+  try {
+    const faviconBuffer = await sharp(BASE_IMAGE)
+      .resize(32, 32)
+      .png()
+      .toBuffer();
 
-      if (!isNaN(width) && !isNaN(height)) {
-        
-        // Перевіряємо, чи існує базова картинка
-        if (!existsSync(BASE_IMAGE)) {
-          res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-          res.end('Базове зображення source.jpg не знайдено на сервері.');
-          return;
-        }
+    // res.type() автоматично виставляє потрібний Content-Type
+    res.type('png').send(faviconBuffer);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Помилка генерації фавікону');
+  }
+});
 
-        try {
-          // Обробляємо зображення за допомогою sharp
-          const imageBuffer = await sharp(BASE_IMAGE)
-            .resize(width, height, {
-              fit: 'cover' // Зрізає зайве, щоб картинка заповнила задані розміри без спотворень
-            })
-            .jpeg({ quality: 80 }) // Зберігаємо у форматі JPEG з якістю 
-            .toBuffer();
+//Динамічна зміна розміру по запиту /image/ШИРИНА/ВИСОТА
+app.get('/image/:width/:height', async (req, res) => {
 
-          // Відправляємо готову картинку в браузер
-          res.writeHead(200, { 'Content-Type': 'image/jpeg' });
-          res.end(imageBuffer);
-          return;
+  const width = Number(req.params.width);
+  const height = Number(req.params.height);
 
-        } catch (error) {
-          console.error('Помилка sharp:', error);
-          res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
-          res.end('Внутрішня помилка сервера під час обробки зображення.');
-          return;
-        }
-      }
-    }
-    
-    res.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
-    res.end('Неправильний формат! Використовуйте: /image/ШИРИНА/ВИСОТА (наприклад: /image/300/200)');
-    return;
+  if (!Number.isInteger(width) || !Number.isInteger(height)) {
+    return res.status(400).send('Помилка: Ширина та висота мають бути цілими числами (наприклад: /image/300/200).');
   }
 
-  // Відповідь для головної сторінки 
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(`
-    <h1>Сервер генерації картинок працює!</h1>
+  if (width < 10 || height < 10) {
+    return res.status(400).send('Помилка: Розмір занадто малий. Мінімальний розмір: 10x10 пікселів.');
+  }
+
+  if (width > 4000 || height > 4000) {
+    return res.status(400).send('Помилка: Розмір занадто великий. Максимальний дозволений розмір: 4000x4000 пікселів.');
+  }
+
+  //  ОБРОБКА ЗОБРАЖЕННЯ
+
+  if (!existsSync(BASE_IMAGE)) {
+    return res.status(404).send('Базове зображення source.jpg не знайдено на сервері.');
+  }
+
+  try {
+    const imageBuffer = await sharp(BASE_IMAGE)
+      .resize(width, height, { fit: 'cover' })
+      .jpeg({ quality: 80 })
+      .toBuffer();
+
+    res.type('jpeg').send(imageBuffer);
+
+  } catch (error) {
+    console.error('Помилка sharp:', error);
+    res.status(500).send('Внутрішня помилка сервера під час обробки зображення.');
+  }
+});
+
+//  Відповідь для головної сторінки
+app.get('/', (req, res) => {
+  // Express автоматично розуміє, що це HTML, і сам ставить Content-Type
+  res.send(`
+    <h1>Сервер генерації картинок працює на Express!</h1>
     <p>Спробуйте перейти за цими посиланнями:</p>
     <ul>
       <li><a href="/image/100/100">Картинка 100x100</a></li>
@@ -91,6 +84,7 @@ const server = createServer(async (req, res) => {
   `);
 });
 
-server.listen(3000, '127.0.0.1', () => {
-  console.log('http://127.0.0.1:3000');
+// Запускаємо сервер
+app.listen(3000, '127.0.0.1', () => {
+  console.log(' Express сервер працює! http://127.0.0.1:3000');
 });
