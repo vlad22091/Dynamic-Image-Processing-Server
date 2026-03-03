@@ -26,12 +26,16 @@ npm init -y
 
 # 2. Install the sharp library for image processing
 npm install sharp
+
+# 3. Install the  library for image processing
+npm install express
+
 Step 3: Start the server
 Once the library is installed, start the server with the command:
 
 Bash
 node server.mjs
-If everything is done correctly, a message will appear in the console: 🚀 Server is running! Open in your browser: http://127.0.0.1:3000.
+If everything is done correctly, a message will appear in the console:  Server is running! Open in your browser: http://127.0.0.1:3000.
 
  How to Use
 Open your browser and go to the following addresses:
